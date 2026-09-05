@@ -1,0 +1,19 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backend (Rust) - detail lengkap ada di backend/.gitignore
+/backend/target/
+/backend/.env
+
+# Android - detail lengkap ada di android/.gitignore
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
