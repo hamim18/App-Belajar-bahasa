@@ -1,14 +1,24 @@
-use axum::{routing::get, Json, Router};
+mod error;
+mod handlers;
+mod models;
+mod state;
+mod storage;
+
+use axum::{
+    extract::DefaultBodyLimit,
+    routing::{get, post},
+    Json, Router,
+};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+use uuid::Uuid;
 
-#[derive(Clone)]
-struct AppState {
-    db: sqlx::PgPool,
-}
+use state::AppState;
+
+const MAX_UPLOAD_SIZE: usize = 50 * 1024 * 1024; // 50 MB
 
 #[tokio::main]
 async fn main() {
@@ -38,7 +48,18 @@ async fn main() {
         .await
         .expect("Gagal menjalankan migrasi");
 
-    let state = AppState { db: pool };
+    tracing::info!("Menyiapkan folder storage PDF...");
+    storage::ensure_storage_dir()
+        .await
+        .expect("Gagal membuat folder storage/pdf");
+
+    let default_user_id = get_or_create_default_user(&pool).await;
+    tracing::info!("Default user ID (sementara, belum ada auth): {}", default_user_id);
+
+    let state = AppState {
+        db: pool,
+        default_user_id,
+    };
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -47,6 +68,33 @@ async fn main() {
 
     let app = Router::new()
         .route("/api/health", get(health_check))
+        // Folder
+        .route(
+            "/api/folders",
+            get(handlers::folders::list_folders).post(handlers::folders::create_folder),
+        )
+        .route(
+            "/api/folders/:id",
+            get(handlers::folders::get_folder)
+                .put(handlers::folders::update_folder)
+                .delete(handlers::folders::delete_folder),
+        )
+        // Materi
+        .route(
+            "/api/folders/:folder_id/materi",
+            get(handlers::materi::list_materi_by_folder),
+        )
+        .route(
+            "/api/materi",
+            post(handlers::materi::create_materi)
+                .layer(DefaultBodyLimit::max(MAX_UPLOAD_SIZE)),
+        )
+        .route(
+            "/api/materi/:id",
+            get(handlers::materi::get_materi)
+                .put(handlers::materi::update_materi)
+                .delete(handlers::materi::delete_materi),
+        )
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);
@@ -68,6 +116,32 @@ async fn health_check(
         "status": "ok",
         "db_connected": db_ok,
         "app": "belajar-bahasa-backend",
-        "version": "0.1.0"
+        "version": "0.2.0"
     }))
+}
+
+/// Belum ada sistem login/register. Supaya folder & materi tetap punya
+/// pemilik (kolom user_id NOT NULL), server otomatis pakai 1 user "default"
+/// yang dibuat sekali saat pertama kali server jalan.
+async fn get_or_create_default_user(pool: &sqlx::PgPool) -> Uuid {
+    if let Some(id) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users ORDER BY created_at ASC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .expect("Gagal query tabel users")
+    {
+        return id;
+    }
+
+    sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO users (username, email, bahasa_sumber_default, bahasa_target_default)
+        VALUES ('default_user', 'default@local', 'ja', 'id')
+        RETURNING id
+        "#,
+    )
+    .fetch_one(pool)
+    .await
+    .expect("Gagal membuat default user")
 }
