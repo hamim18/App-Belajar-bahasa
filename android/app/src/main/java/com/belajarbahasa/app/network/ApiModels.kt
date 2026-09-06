@@ -59,3 +59,82 @@ data class CreateFolderRequest(
 data class DeletedResponse(
     val deleted: Boolean
 )
+
+// ============================================================
+// DAFTAR ISI (Task 4)
+// ============================================================
+
+/**
+ * Bentuk node hasil GET daftar isi (nested tree, sudah bilingual).
+ * Sinkron dengan backend/src/models.rs -> struct DaftarIsiNode.
+ * judul_sumber/judul_target mengikuti bahasa_sumber/bahasa_target milik
+ * materi induknya - jadi UI tidak perlu tahu kode bahasa mana yang dipakai.
+ */
+@Serializable
+data class DaftarIsiNode(
+    val id: String,
+    val halaman_awal: Int,
+    val halaman_akhir: Int,
+    val level: Int,
+    val urutan: Int,
+    val parent_id: String? = null,
+    val judul_sumber: String? = null,
+    val judul_target: String? = null,
+    val sub_bab: List<DaftarIsiNode> = emptyList()
+)
+
+/**
+ * Satu item bab dalam bentuk import/export JSON (sesuai template di
+ * Konsep-program-learn.md lampiran A). Dipakai baik untuk mengirim (import)
+ * maupun menerima (export) - bentuknya sengaja dibuat identik.
+ */
+@Serializable
+data class ImportBabItem(
+    val judul_sumber: String,
+    val judul_target: String,
+    val halaman_awal: Int,
+    val halaman_akhir: Int,
+    val level: Int = 1,
+    val urutan: Int = 0,
+    val sub_bab: List<ImportBabItem> = emptyList()
+)
+
+/** Body POST /api/materi/{materiId}/daftar-isi/import */
+@Serializable
+data class ImportDaftarIsiRequest(
+    val bahasa_sumber: String,
+    val bahasa_target: String,
+    val daftar_isi: List<ImportBabItem>
+)
+
+/** Response GET /api/materi/{materiId}/daftar-isi/export dan GET /api/daftar-isi/template */
+@Serializable
+data class ExportDaftarIsiResponse(
+    val bahasa_sumber: String,
+    val bahasa_target: String,
+    val daftar_isi: List<ImportBabItem>
+)
+
+/** Body POST /api/materi/{materiId}/daftar-isi (tambah bab/sub-bab manual) */
+@Serializable
+data class CreateBabRequest(
+    val judul_sumber: String,
+    val judul_target: String,
+    val halaman_awal: Int,
+    val halaman_akhir: Int,
+    val level: Int = 1,
+    val parent_id: String? = null,
+    val urutan: Int = 0
+)
+
+/** Body PUT /api/daftar-isi/{id}. Field null tidak diubah di backend (COALESCE). */
+@Serializable
+data class UpdateBabRequest(
+    val judul_sumber: String? = null,
+    val judul_target: String? = null,
+    val halaman_awal: Int? = null,
+    val halaman_akhir: Int? = null,
+    val level: Int? = null,
+    val urutan: Int? = null,
+    val parent_id: String? = null
+)

@@ -7,6 +7,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -46,4 +47,34 @@ interface ApiService {
 
     @DELETE("api/materi/{id}")
     suspend fun deleteMateri(@Path("id") id: String): DeletedResponse
+
+    // ===== Daftar Isi - Task 4 =====
+    // Sinkron dengan backend/src/handlers/daftar_isi.rs
+
+    @GET("api/materi/{materiId}/daftar-isi")
+    suspend fun getDaftarIsi(@Path("materiId") materiId: String): List<DaftarIsiNode>
+
+    @POST("api/materi/{materiId}/daftar-isi")
+    suspend fun createBab(
+        @Path("materiId") materiId: String,
+        @Body body: CreateBabRequest
+    ): DaftarIsiNode
+
+    @PUT("api/daftar-isi/{id}")
+    suspend fun updateBab(@Path("id") id: String, @Body body: UpdateBabRequest): DaftarIsiNode
+
+    @DELETE("api/daftar-isi/{id}")
+    suspend fun deleteBab(@Path("id") id: String): DeletedResponse
+
+    @POST("api/materi/{materiId}/daftar-isi/import")
+    suspend fun importDaftarIsi(
+        @Path("materiId") materiId: String,
+        @Body body: ImportDaftarIsiRequest
+    ): List<DaftarIsiNode>
+
+    @GET("api/materi/{materiId}/daftar-isi/export")
+    suspend fun exportDaftarIsi(@Path("materiId") materiId: String): ExportDaftarIsiResponse
+
+    @GET("api/daftar-isi/template")
+    suspend fun getDaftarIsiTemplate(): ExportDaftarIsiResponse
 }

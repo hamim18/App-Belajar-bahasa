@@ -77,7 +77,7 @@ import java.io.IOException
  * folder yang sedang dibuka (breadcrumb), kosong berarti sedang di root.
  */
 @Composable
-fun HomeScreen() {
+fun HomeScreen(onOpenMateri: (Materi) -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -256,7 +256,7 @@ fun HomeScreen() {
                         FolderRow(folder = folder, onClick = { folderStack.add(folder) })
                     }
                     items(filteredMateri, key = { it.id }) { materi ->
-                        MateriRow(materi = materi)
+                        MateriRow(materi = materi, onClick = { onOpenMateri(materi) })
                     }
                 }
             }
@@ -376,9 +376,10 @@ private fun FolderRow(folder: FolderListItem, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MateriRow(materi: Materi) {
+private fun MateriRow(materi: Materi, onClick: () -> Unit) {
     Column {
         ListItem(
+            modifier = Modifier.clickable(onClick = onClick),
             headlineContent = { Text(materi.judul, fontWeight = FontWeight.SemiBold) },
             supportingContent = {
                 Text("${materi.bahasa_sumber} → ${materi.bahasa_target} • ${materi.total_halaman} halaman")

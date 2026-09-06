@@ -6,7 +6,7 @@ mod storage;
 
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde_json::json;
@@ -94,6 +94,27 @@ async fn main() {
             get(handlers::materi::get_materi)
                 .put(handlers::materi::update_materi)
                 .delete(handlers::materi::delete_materi),
+        )
+        // Daftar Isi
+        .route(
+            "/api/materi/:materi_id/daftar-isi",
+            get(handlers::daftar_isi::get_daftar_isi).post(handlers::daftar_isi::create_bab),
+        )
+        .route(
+            "/api/materi/:materi_id/daftar-isi/import",
+            post(handlers::daftar_isi::import_daftar_isi),
+        )
+        .route(
+            "/api/materi/:materi_id/daftar-isi/export",
+            get(handlers::daftar_isi::export_daftar_isi),
+        )
+        .route(
+            "/api/daftar-isi/template",
+            get(handlers::daftar_isi::get_template),
+        )
+        .route(
+            "/api/daftar-isi/:id",
+            put(handlers::daftar_isi::update_bab).delete(handlers::daftar_isi::delete_bab),
         )
         .layer(TraceLayer::new_for_http())
         .layer(cors)
