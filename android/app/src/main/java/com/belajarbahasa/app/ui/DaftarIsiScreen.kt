@@ -19,11 +19,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -112,7 +114,9 @@ fun DaftarIsiScreen(
     judulMateri: String,
     bahasaSumber: String,
     bahasaTarget: String,
+    totalHalaman: Int,
     onBack: () -> Unit,
+    onOpenPdf: (startHalaman: Int?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -178,6 +182,15 @@ fun DaftarIsiScreen(
                     }
                 },
             )
+        },
+        floatingActionButton = {
+            if (totalHalaman > 0) {
+                ExtendedFloatingActionButton(
+                    onClick = { onOpenPdf(null) },
+                    icon = { Text("📖") },
+                    text = { Text("Baca") },
+                )
+            }
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -256,6 +269,7 @@ fun DaftarIsiScreen(
                     BabRow(
                         flat = flat,
                         viewMode = viewMode,
+                        onOpen = { onOpenPdf(flat.node.halaman_awal) },
                         onTambahSubBab = {
                             addParentId = flat.node.id
                             editingNode = null
@@ -422,6 +436,7 @@ fun DaftarIsiScreen(
 private fun BabRow(
     flat: FlatBab,
     viewMode: ViewMode,
+    onOpen: () -> Unit,
     onTambahSubBab: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -459,6 +474,13 @@ private fun BabRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            IconButton(onClick = onOpen) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "Buka PDF dari bab ini",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Menu bab")

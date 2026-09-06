@@ -7,8 +7,8 @@
 
 ## Status Terkini
 
-**Task aktif:** Task 5 - PDF Viewer (Android)
-**Status:** ✅ Task 4 (Daftar Isi - Backend + Android) CONFIRMED berhasil oleh user — `cargo build`, `cargo run`, `./gradlew assembleDebug`, `installDebug` semua sukses, dan pengujian manual di HP fisik (tambah bab, import JSON, export JSON) semua lolos.
+**Task aktif:** Task 6 - Kamus & Kosakata (Backend + Android)
+**Status:** ✅ Task 5 (PDF Viewer - Backend + Android) CONFIRMED berhasil oleh user — `cargo build`, `cargo run`, `./gradlew assembleDebug`, `installDebug` semua sukses, dan pengujian manual di HP fisik (buka PDF dari Daftar Isi, swipe halaman, pinch/double-tap zoom, tambah/hapus/lompat ke bookmark, resume dari halaman terakhir) semua lolos setelah 1 ronde perbaikan bug kecil.
 
 ---
 
@@ -194,21 +194,92 @@ Lihat detail lengkap di riwayat versi sebelumnya (struktur project, kriteria ber
 
 ---
 
+### Task 5 — PDF Viewer, Progress & Bookmark (Backend + Android) (2026-09-06)
+
+**Yang dikerjakan:**
+
+1. **File baru ditambahkan (backend):**
+   - `backend/src/handlers/progress.rs`:
+     - `GET /api/materi/:id/progress` — ambil progress baca user untuk materi ini. Kalau belum pernah ada row di DB, kembalikan default (halaman 0, 0%) TANPA membuat row baru.
+     - `PUT /api/materi/:id/progress` — upsert progress (`INSERT ... ON CONFLICT (materi_id, user_id) DO UPDATE`). `progress_persen` dihitung di backend dari `total_halaman` materi (bukan dikirim dari Android), supaya rumusnya konsisten di satu tempat.
+   - `backend/src/handlers/bookmarks.rs`:
+     - `GET /api/materi/:materi_id/bookmarks` — list bookmark milik user untuk materi ini, urut per halaman.
+     - `POST /api/materi/:materi_id/bookmarks` — tambah bookmark (halaman + catatan opsional).
+     - `DELETE /api/bookmarks/:id` — hapus bookmark (query join ke `materi`+`folders` untuk pastikan bookmark itu milik user yang benar).
+   - `android/.../ui/PdfViewerScreen.kt` — layar utama PDF Viewer:
+     - Download file PDF sekali dari `GET /api/materi/:id/file`, di-cache di `cacheDir/pdf_cache/<materiId>.pdf` (tidak didownload ulang kalau cache sudah ada).
+     - Render tiap halaman jadi `Bitmap` pakai `android.graphics.pdf.PdfRenderer` bawaan Android di dispatcher single-thread khusus (PdfRenderer tidak thread-safe untuk akses paralel).
+     - Navigasi halaman pakai `HorizontalPager` (Compose Foundation) + tombol Prev/Next + progress bar linear.
+     - Zoom & pan: pinch-zoom dan double-tap-zoom lewat `graphicsLayer` (scale/offset), TANPA render ulang bitmap di resolusi berbeda (bitmap dirender sekali di resolusi tetap 1080px lebar, cukup tajam untuk zoom hingga ~3.5x).
+     - Tap di tengah layar toggle toolbar atas/bawah.
+     - Progress baca disimpan ke backend dengan debounce 800ms setelah pindah halaman (best-effort, gagal simpan tidak memblokir baca — sesuai filosofi offline-first).
+     - Bookmark: tombol tambah (dialog input halaman+catatan) dan tombol lihat daftar (dialog list, klik item untuk lompat ke halaman itu, tombol hapus terpisah).
+     - Tombol "📝 Kosakata" masih placeholder (Toast "Fitur Kosakata akan hadir di Task 6").
+
+2. **File diubah (backend):**
+   - `backend/src/models.rs` — tambah struct `ProgressBaca`, `UpdateProgressRequest`, `Bookmark`, `CreateBookmarkRequest`.
+   - `backend/src/handlers/mod.rs` — tambah `pub mod progress;` dan `pub mod bookmarks;`.
+   - `backend/src/handlers/materi.rs` — tambah handler `get_materi_file` untuk `GET /api/materi/:id/file` (baca file PDF penuh ke memory lalu kirim sebagai response `application/pdf` — cukup aman karena upload sudah dibatasi 50MB).
+   - `backend/src/main.rs` — tambah routing untuk file PDF, progress, dan bookmark; tambah `delete` ke import `axum::routing`.
+
+3. **File diubah (Android):**
+   - `android/.../network/ApiModels.kt` — tambah `ProgressBaca`, `UpdateProgressRequest`, `Bookmark`, `CreateBookmarkRequest`.
+   - `android/.../network/ApiService.kt` — tambah `downloadMateriFile` (dengan `@Streaming`), `getProgress`, `updateProgress`, `listBookmarks`, `createBookmark`, `deleteBookmark`.
+   - `android/.../network/ApiClient.kt` — `readTimeout` dinaikkan dari 30 ke 120 detik (download PDF besar butuh waktu lebih lama dari request JSON biasa).
+   - `android/.../ui/DaftarIsiScreen.kt` — tombol "📖 Baca" (buka dari progress terakhir) jadi `FloatingActionButton`; tiap baris bab dapat ikon ▶ untuk buka PDF langsung dari halaman awal bab itu.
+   - `android/.../MainActivity.kt` — tambah `AppScreen.PdfViewer(materi, startHalaman: Int?)`; `startHalaman = null` artinya "lanjutkan dari progress terakhir", angka eksplisit artinya "lompat ke halaman itu" (dipakai tombol ▶ per bab).
+   - `android/app/build.gradle.kts` — tambah `-opt-in=androidx.compose.foundation.ExperimentalFoundationApi` di `freeCompilerArgs` (dibutuhkan untuk `HorizontalPager`/`rememberPagerState`); versionCode → 3, versionName → `0.3.0-task5`.
+
+4. **Tidak ada migrasi SQL baru** — tabel `progress_baca` & `bookmarks` sudah ada dari `migrations/0001_init.sql` Task 1, langsung dipakai. **Tidak ada dependency Gradle baru** — PDF Viewer sengaja pakai `android.graphics.pdf.PdfRenderer` bawaan Android (API 21+, minSdk project 26), bukan library pihak ketiga (AndroidPdfViewer/PDF.js yang disebut di `Konsep-program-learn.md`), supaya tidak perlu tambah repository JitPack di device dev CLI-only.
+
+**Keputusan desain penting (asumsi, dicatat supaya tidak lupa):**
+- **PdfRenderer bawaan Android, bukan library pihak ketiga.** Konsekuensinya: swipe halaman, zoom, dan toggle toolbar semua diimplementasi manual dengan Compose (`HorizontalPager` + gesture custom), bukan otomatis dari library. Trade-off ini didiskusikan di awal task dan disetujui.
+- **File PDF didownload sekali & di-cache lokal** di `cacheDir/pdf_cache/<materiId>.pdf`, bukan streaming langsung dari network setiap render halaman. Kalau file materi di server pernah diganti (belum ada fitur ganti file di Task 2/3), cache lokal HP tidak otomatis ter-update — perlu clear cache app secara manual kalau ini terjadi nanti.
+- **`GET /api/materi/:id/file` membaca file penuh ke memory** (`tokio::fs::read`), bukan streaming chunk-by-chunk. Cukup aman untuk sekarang karena upload dibatasi `MAX_UPLOAD_SIZE` 50MB, tapi kalau nanti ada kebutuhan materi jauh lebih besar, pertimbangkan ganti ke `tokio_util::io::ReaderStream`.
+- **`startHalaman: Int?` sebagai sinyal niat**, bukan sekadar nomor halaman: `null` = "tombol Baca, lanjutkan dari progress terakhir" (fetch `GET .../progress` sebelum buka pager), angka eksplisit = "tombol ▶ per bab, langsung ke halaman itu" (tidak fetch progress). Penting diingat kalau nanti ada entry point baru ke PdfViewerScreen — harus eksplisit pilih salah satu dari 2 sinyal ini, jangan asumsikan default 1.
+- **Progress & bookmark schema tidak berubah dari Task 1** — endpoint baru murni CRUD di atas tabel yang sudah ada, tidak ada migrasi baru.
+
+**Bug yang ditemukan & diperbaiki (2 ronde, semua dikonfirmasi user):**
+
+*Ronde 1 — gagal compile (`./gradlew assembleDebug`):*
+1. `This foundation API is experimental and is likely to change or be removed in the future.` di banyak baris `PdfViewerScreen.kt` (pemakaian `HorizontalPager`/`rememberPagerState`) → **Penyebab:** sama persis dengan kasus `TopAppBar` di Task 3 — API foundation ini masih ditandai `@ExperimentalFoundationApi`, tanpa opt-in Kotlin compiler menjadikannya compile error. → **Fix:** tambah `-opt-in=androidx.compose.foundation.ExperimentalFoundationApi` di `freeCompilerArgs` pada `app/build.gradle.kts` (pola yang sama seperti fix Material3 di Task 3).
+
+*Ronde 2 — build sukses, tapi 4 bug perilaku ditemukan saat testing manual di HP:*
+1. **Tombol "📖 Baca" tidak kelihatan/ke-klik** (di ujung kiri layar) → **Penyebab:** toolbar Daftar Isi sudah punya 3 tombol (Import JSON, Tambah Bab, Export) dalam satu `Row` tanpa scroll/wrap, tombol ke-4 overflow keluar layar. → **Fix:** tombol "Baca" dipindah jadi `ExtendedFloatingActionButton` terpisah di `Scaffold`, selalu terlihat di pojok kanan bawah terlepas dari lebar layar.
+2. **Swipe kiri/kanan tidak berfungsi sama sekali** → **Penyebab:** `detectTransformGestures` bawaan Compose langsung meng-*consume* setiap gerakan 1 jari sebagai "pan" sejak awal gesture, sehingga `HorizontalPager` di ancestor tidak pernah kebagian gesture drag untuk memicu perpindahan halaman. → **Fix:** ganti dengan gesture detector custom pakai `awaitEachGesture` + `calculateZoom()`/`calculatePan()` manual, yang hanya meng-*consume* event kalau (a) ada 2 jari atau lebih (pinch), atau (b) gambar sedang dalam kondisi zoom (`scale > 1f`). Kalau 1 jari & belum zoom, event dibiarkan tidak ter-consume supaya diteruskan ke `HorizontalPager` sebagai swipe normal.
+3. **Klik item di daftar bookmark tidak melakukan apa-apa** (cuma bisa hapus) → **Fix:** tambah state `pendingJumpPage` yang di-set saat item bookmark di-tap, dikonsumsi oleh `LaunchedEffect` di dalam `PdfPagerContent` yang memanggil `pagerState.scrollToPage(...)`, lalu direset lagi ke `null`.
+4. **Tidak resume dari halaman terakhir dibaca** setelah app ditutup-buka lagi → **Fix:** ubah tipe `startHalaman` dari `Int` jadi `Int?` di sepanjang alur (`DaftarIsiScreen` → `MainActivity` → `PdfViewerScreen`). Tombol "Baca" (FAB) sekarang kirim `null`, yang oleh `PdfViewerScreen` diartikan sebagai "fetch `GET /api/materi/:id/progress` dulu, lalu buka di `halaman_terakhir`nya (atau halaman 1 kalau belum pernah baca / gagal fetch)". Tombol ▶ per bab tetap kirim angka eksplisit (halaman awal bab itu), tidak terpengaruh perubahan ini.
+
+**Kriteria berhasil (dikonfirmasi user, build backend & Android + testing manual di HP, SEMUA SUKSES setelah 2 ronde perbaikan):**
+- [x] `cargo build` & `cargo run` sukses tanpa error
+- [x] Endpoint `GET /api/materi/:id/file`, `GET`/`PUT /api/materi/:id/progress`, `GET`/`POST /api/materi/:materi_id/bookmarks`, `DELETE /api/bookmarks/:id` semua berfungsi (dicek via curl)
+- [x] `./gradlew assembleDebug` & `installDebug` sukses tanpa error
+- [x] Tap tombol "📖 Baca" (FAB) di Daftar Isi → PDF Viewer terbuka, tombol terlihat jelas di semua ukuran layar
+- [x] Tap ikon ▶ di salah satu bab → PDF Viewer terbuka langsung ke halaman awal bab itu
+- [x] Swipe kiri/kanan → halaman PDF berpindah dengan lancar
+- [x] Pinch zoom in/out & double-tap zoom berfungsi; tap tengah layar toggle toolbar
+- [x] Tambah bookmark berhasil, ikon bookmark di toolbar berubah warna saat berada di halaman yang di-bookmark
+- [x] Tap item di daftar bookmark → PDF lompat ke halaman itu; tombol hapus bookmark berfungsi terpisah
+- [x] Tombol "📝 Kosakata" menampilkan Toast placeholder sesuai rencana (fungsional penuh di Task 6)
+- [x] Tutup app, buka lagi, masuk ke materi yang sama, tap "📖 Baca" → langsung ke halaman terakhir yang dibaca sebelumnya (bukan selalu halaman 1)
+
+**Hasil:** ✅ TASK 5 SELESAI TOTAL (dikonfirmasi user — build backend & Android sukses, seluruh fungsi PDF Viewer/progress/bookmark diuji manual di HP fisik, semua lolos setelah 2 ronde perbaikan: 1x fix compile error opt-in, 1x fix 4 bug perilaku)
+
+---
+
 ## Next Step
 
 Kandidat task berikutnya (urutan disarankan, tapi bisa didiskusikan ulang):
 
-1. **Task 5 — PDF Viewer (Android)** ⬅️ **BERIKUTNYA**
-   - Integrasi library PDF viewer (mis. AndroidPdfViewer / PDF.js via WebView) sesuai mockup bagian 3
-   - Navigasi halaman (next/prev, swipe, jump to page), zoom (75%/100%/125%/150%)
-   - Progress tracking: `PUT /api/materi/:id/progress` (endpoint ini sudah didefinisikan di `Konsep-program-learn.md` bagian 5.4 tapi **belum diimplementasikan** di backend — perlu dicek dulu apakah sudah ada dari task sebelumnya atau perlu dibuat baru di Task 5 ini)
-   - Bookmark halaman: `GET/POST /api/materi/:id/bookmarks`, `DELETE /api/bookmarks/:id` (juga belum diimplementasikan, cek `Konsep-program-learn.md` bagian 5.4)
-   - Tombol "Kosakata" di toolbar PDF viewer bisa disiapkan sebagai placeholder navigasi ke Task 6 (belum perlu fungsional penuh)
-2. **Task 6 — Kamus & Kosakata (Backend + Android)**: search kamus, modal tambah kosakata, deduplikasi.
+1. **Task 6 — Kamus & Kosakata (Backend + Android)** ⬅️ **BERIKUTNYA**
+   - Backend: endpoint kamus (`GET /api/kamus?q=...`, `GET /api/kamus/:id`, `POST /api/kamus`) dan kosakata konteks (`GET`/`POST`/`PUT`/`DELETE /api/kosakata`, termasuk endpoint per halaman & per bab yang sudah didesain di `Konsep-program-learn.md` bagian 5.3) — tabel `kamus`, `kamus_terjemahan`, `kosakata_konteks` sudah ada dari migrasi Task 1, tinggal dicek lagi skemanya sebelum mulai.
+   - Android: modal Kosakata per halaman (list kosakata + tombol tambah), modal Tambah Kosakata dengan sugesti dari kamus & deduplikasi (sesuai mockup bagian 4 & 5), halaman Kamus + Detail Kata (mockup bagian 6 & 7).
+   - Tombol "📝 Kosakata" yang sekarang masih placeholder Toast di `PdfViewerScreen.kt` akan diganti jadi navigasi ke modal Kosakata halaman aktif.
+   - Perlu didiskusikan di awal task: bagaimana modal Kosakata (yang menurut mockup adalah overlay di atas PDF Viewer) diimplementasikan — apakah sebagai `ModalBottomSheet`/`Dialog` di atas `PdfViewerScreen`, atau layar terpisah yang menutupi PDF sementara.
 
-**PENTING:** Sebelum lanjut ke Task 5, selalu tanyakan ke user file-file project Android & backend terakhir untuk di-upload (terutama file-file yang baru dibuat/diubah di Task 4: `daftar_isi.rs`, `models.rs`, `main.rs`, `handlers/mod.rs`, `DaftarIsiScreen.kt`, `ApiModels.kt`, `ApiService.kt`, `HomeScreen.kt`, `MainActivity.kt`), jangan berasumsi dari `progress.md` saja bahwa kode di atas 100% sama dengan yang ada di device/repo user — apalagi setelah ada fix manual langsung di file `daftar_isi.rs` pada sesi ini.
+**PENTING:** Sebelum lanjut ke Task 6, selalu tanyakan ke user file-file project Android & backend terakhir untuk di-upload (terutama file-file yang baru dibuat/diubah di Task 5: `progress.rs`, `bookmarks.rs`, `materi.rs`, `models.rs`, `mod.rs`, `main.rs`, `PdfViewerScreen.kt`, `DaftarIsiScreen.kt`, `MainActivity.kt`, `ApiModels.kt`, `ApiService.kt`, `ApiClient.kt`, `build.gradle.kts`), jangan berasumsi dari `progress.md` saja bahwa kode di atas 100% sama dengan yang ada di device/repo user — apalagi setelah 2 ronde perbaikan bug manual di sesi ini.
 
-Juga perlu dicek: apakah tabel `progress_baca` dan `bookmarks` (sudah ada skemanya dari migrasi Task 1) sudah punya endpoint API-nya atau belum, supaya Task 5 tidak duplikat kerjaan.
+Juga perlu dicek: skema tabel `kamus`, `kamus_terjemahan`, `kosakata_konteks` dari `migrations/0001_init.sql` Task 1 — pastikan field-fieldnya (terutama `tipe_kata`, `reading`, `contoh_kalimat`, `folder_kustom`) masih sesuai kebutuhan sebelum mulai desain endpoint Task 6.
 
 ---
 
@@ -225,35 +296,38 @@ aplikasi-belajar-bahasa/
 │   ├── storage/
 │   │   └── pdf/               # File PDF hasil upload (di-gitignore)
 │   └── src/
-│       ├── main.rs            # + routing daftar isi (Task 4)
+│       ├── main.rs            # + routing file/progress/bookmark (Task 5)
 │       ├── state.rs
 │       ├── error.rs
-│       ├── models.rs          # + struct daftar isi (Task 4)
+│       ├── models.rs          # + struct ProgressBaca, Bookmark (Task 5)
 │       ├── storage.rs
 │       └── handlers/
-│           ├── mod.rs         # + mod daftar_isi (Task 4)
+│           ├── mod.rs         # + mod progress, mod bookmarks (Task 5)
 │           ├── folders.rs
-│           ├── materi.rs
-│           └── daftar_isi.rs  # baru (Task 4)
+│           ├── materi.rs      # + get_materi_file (Task 5)
+│           ├── daftar_isi.rs
+│           ├── progress.rs    # baru (Task 5)
+│           └── bookmarks.rs   # baru (Task 5)
 ├── android/                  # Kotlin + Jetpack Compose
 │   ├── settings.gradle.kts
 │   ├── build.gradle.kts
 │   ├── gradle.properties
 │   └── app/
-│       ├── build.gradle.kts   # + dependency Retrofit/OkHttp/Serialization (Task 3)
+│       ├── build.gradle.kts   # + opt-in ExperimentalFoundationApi, versionCode 3 (Task 5)
 │       ├── proguard-rules.pro
 │       └── src/main/
 │           ├── AndroidManifest.xml
 │           └── java/com/belajarbahasa/app/
-│               ├── MainActivity.kt        # navigasi Home <-> DaftarIsi (Task 4)
+│               ├── MainActivity.kt        # + AppScreen.PdfViewer (Task 5)
 │               ├── BackendPrefs.kt        # (Task 3)
 │               ├── network/
-│               │   ├── ApiClient.kt       # (Task 3)
-│               │   ├── ApiModels.kt       # + model daftar isi (Task 4)
-│               │   └── ApiService.kt      # + endpoint daftar isi (Task 4)
+│               │   ├── ApiClient.kt       # + readTimeout 120s (Task 5)
+│               │   ├── ApiModels.kt       # + ProgressBaca, Bookmark, dst (Task 5)
+│               │   └── ApiService.kt      # + endpoint file/progress/bookmark (Task 5)
 │               ├── ui/
-│               │   ├── HomeScreen.kt      # + onOpenMateri (Task 4)
-│               │   ├── DaftarIsiScreen.kt # baru (Task 4)
+│               │   ├── HomeScreen.kt      # (Task 4)
+│               │   ├── DaftarIsiScreen.kt # + FAB Baca, ikon ▶ per bab (Task 5)
+│               │   ├── PdfViewerScreen.kt # baru (Task 5)
 │               │   └── theme/
 │               │       └── Theme.kt       # (Task 3)
 │               └── util/

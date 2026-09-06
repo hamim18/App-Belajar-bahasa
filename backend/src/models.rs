@@ -174,10 +174,55 @@ pub struct ImportBabItem {
 
 /// Bentuk response GET export - sengaja dibuat identik dengan bentuk
 /// ImportDaftarIsiRequest supaya hasil export bisa langsung dipakai lagi
-/// sebagai import (round-trip / backup-restore).
+/// sebagai import (round-trip backup-restore).
 #[derive(Debug, Serialize)]
 pub struct ExportDaftarIsiResponse {
     pub bahasa_sumber: String,
     pub bahasa_target: String,
     pub daftar_isi: Vec<ImportBabItem>,
+}
+
+// ============================================================
+// PROGRESS BACA (Task 5)
+// ============================================================
+
+/// Satu baris progress baca untuk (materi, user). Kalau user belum pernah
+/// baca materi ini, handler get_progress mengembalikan nilai default
+/// (halaman 0, 0%) tanpa membuat row baru di DB - row baru baru dibuat
+/// saat PUT pertama kali (lihat handlers/progress.rs).
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ProgressBaca {
+    pub materi_id: Uuid,
+    pub halaman_terakhir: i32,
+    pub progress_persen: i32,
+    pub last_read_at: NaiveDateTime,
+}
+
+/// Body PUT /api/materi/:id/progress.
+/// progress_persen SENGAJA tidak diminta dari Android - dihitung otomatis
+/// di backend dari total_halaman materi, supaya perhitungan konsisten
+/// di satu tempat saja (backend), bukan didup di kode Android juga.
+#[derive(Debug, Deserialize)]
+pub struct UpdateProgressRequest {
+    pub halaman_terakhir: i32,
+}
+
+// ============================================================
+// BOOKMARK (Task 5)
+// ============================================================
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct Bookmark {
+    pub id: Uuid,
+    pub materi_id: Uuid,
+    pub halaman: i32,
+    pub catatan: Option<String>,
+    pub created_at: NaiveDateTime,
+}
+
+/// Body POST /api/materi/:materi_id/bookmarks.
+#[derive(Debug, Deserialize)]
+pub struct CreateBookmarkRequest {
+    pub halaman: i32,
+    pub catatan: Option<String>,
 }

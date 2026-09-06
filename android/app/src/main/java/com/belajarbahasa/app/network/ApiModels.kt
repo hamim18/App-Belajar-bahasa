@@ -138,3 +138,43 @@ data class UpdateBabRequest(
     val urutan: Int? = null,
     val parent_id: String? = null
 )
+
+// ============================================================
+// PROGRESS BACA & BOOKMARK (Task 5)
+// ============================================================
+
+/**
+ * Sinkron dengan backend/src/models.rs -> struct ProgressBaca.
+ * progress_persen dihitung di backend (bukan Android) dari total_halaman
+ * materi, supaya rumusnya konsisten di satu tempat saja.
+ */
+@Serializable
+data class ProgressBaca(
+    val materi_id: String,
+    val halaman_terakhir: Int,
+    val progress_persen: Int,
+    val last_read_at: String
+)
+
+/** Body PUT /api/materi/{id}/progress */
+@Serializable
+data class UpdateProgressRequest(
+    val halaman_terakhir: Int
+)
+
+/** Sinkron dengan backend/src/models.rs -> struct Bookmark. */
+@Serializable
+data class Bookmark(
+    val id: String,
+    val materi_id: String,
+    val halaman: Int,
+    val catatan: String? = null,
+    val created_at: String
+)
+
+/** Body POST /api/materi/{materiId}/bookmarks */
+@Serializable
+data class CreateBookmarkRequest(
+    val halaman: Int,
+    val catatan: String? = null
+)

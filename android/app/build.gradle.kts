@@ -12,8 +12,8 @@ android {
         applicationId = "com.belajarbahasa.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0-task3"
+        versionCode = 3
+        versionName = "0.3.0-task5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -36,7 +36,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
         freeCompilerArgs += listOf(
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi"
         )
     }
 

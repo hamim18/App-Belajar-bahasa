@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import com.belajarbahasa.app.network.Materi
 import com.belajarbahasa.app.ui.DaftarIsiScreen
 import com.belajarbahasa.app.ui.HomeScreen
+import com.belajarbahasa.app.ui.PdfViewerScreen
 import com.belajarbahasa.app.ui.theme.BelajarBahasaTheme
 
 /**
@@ -26,6 +27,7 @@ import com.belajarbahasa.app.ui.theme.BelajarBahasaTheme
 private sealed class AppScreen {
     data object Home : AppScreen()
     data class DaftarIsi(val materi: Materi) : AppScreen()
+    data class PdfViewer(val materi: Materi, val startHalaman: Int?) : AppScreen()
 }
 
 /**
@@ -35,6 +37,9 @@ private sealed class AppScreen {
  * backend Rust).
  * Task 4: tap materi di HomeScreen sekarang membuka DaftarIsiScreen
  * (bab & sub-bab bilingual, import/export JSON, CRUD manual).
+ * Task 5: tombol "📖 Baca" atau ikon ▶ per bab di DaftarIsiScreen sekarang
+ * membuka PdfViewerScreen (render PDF, swipe/zoom halaman, progress baca,
+ * bookmark).
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,7 +58,18 @@ class MainActivity : ComponentActivity() {
                             judulMateri = current.materi.judul,
                             bahasaSumber = current.materi.bahasa_sumber,
                             bahasaTarget = current.materi.bahasa_target,
+                            totalHalaman = current.materi.total_halaman,
                             onBack = { screen = AppScreen.Home },
+                            onOpenPdf = { halaman ->
+                                screen = AppScreen.PdfViewer(current.materi, halaman)
+                            },
+                        )
+                        is AppScreen.PdfViewer -> PdfViewerScreen(
+                            materiId = current.materi.id,
+                            judulMateri = current.materi.judul,
+                            totalHalamanAwal = current.materi.total_halaman,
+                            startHalaman = current.startHalaman,
+                            onBack = { screen = AppScreen.DaftarIsi(current.materi) },
                         )
                     }
                 }

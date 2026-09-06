@@ -1,5 +1,7 @@
 use axum::{
+    body::Body,
     extract::{Multipart, Path, State},
+    response::Response,
     Json,
 };
 use uuid::Uuid;
@@ -220,10 +222,10 @@ pub async fn update_materi(
     let updated = sqlx::query_scalar::<_, Uuid>(
         r#"
         UPDATE materi m SET
-            judul = COALESCE($1, m.judul),
-            folder_id = COALESCE($2, m.folder_id),
-            bahasa_sumber = COALESCE($3, m.bahasa_sumber),
-            bahasa_target = COALESCE($4, m.bahasa_target),
+            judul = COALESCE($1, judul),
+            folder_id = COALESCE($2, folder_id),
+            bahasa_sumber = COALESCE($3, bahasa_sumber),
+            bahasa_target = COALESCE($4, bahasa_target),
             updated_at = NOW()
         FROM folders f
         WHERE m.id = $5 AND m.folder_id = f.id AND f.user_id = $6
@@ -241,6 +243,44 @@ pub async fn update_materi(
     .ok_or_else(|| AppError::NotFound("Materi tidak ditemukan".to_string()))?;
 
     get_materi(State(state), Path(updated)).await
+}
+
+/// GET /api/materi/:id/file
+/// Mengirim file PDF asli (binary) supaya Android bisa mendownload &
+/// merender lewat android.graphics.pdf.PdfRenderer di PdfViewerScreen (Task 5).
+/// Catatan: file dibaca penuh ke memory (bukan streaming chunk-by-chunk) -
+/// cukup aman karena upload sudah dibatasi MAX_UPLOAD_SIZE 50MB di main.rs.
+/// Kalau nanti ada materi jauh lebih besar, pertimbangkan ganti ke
+/// tokio_util::io::ReaderStream supaya tidak menahan seluruh file di RAM.
+pub async fn get_materi_file(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let file_pdf = sqlx::query_scalar::<_, Option<String>>(
+        r#"
+        SELECT m.file_pdf
+        FROM materi m
+        JOIN folders f ON f.id = m.folder_id
+        WHERE m.id = $1 AND f.user_id = $2
+        "#,
+    )
+    .bind(id)
+    .bind(state.default_user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Materi tidak ditemukan".to_string()))?
+    .ok_or_else(|| AppError::NotFound("Materi ini belum punya file PDF".to_string()))?;
+
+    let path = storage::pdf_path(&file_pdf);
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|_| AppError::NotFound("File PDF tidak ditemukan di storage".to_string()))?;
+
+    Response::builder()
+        .header("Content-Type", "application/pdf")
+        .header("Content-Length", bytes.len().to_string())
+        .body(Body::from(bytes))
+        .map_err(|e| AppError::Internal(format!("Gagal membuat response file: {e}")))
 }
 
 /// DELETE /api/materi/:id

@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit
  *
  * writeTimeout dibuat lebih panjang (60 detik) karena upload PDF + hitung
  * halaman di server (lopdf) butuh waktu lebih dari request JSON biasa.
+ * readTimeout juga dinaikkan jadi 120 detik (Task 5) karena download file
+ * PDF utuh untuk PDF Viewer bisa berukuran puluhan MB di wifi yang lambat.
  */
 object ApiClient {
     private var cachedBaseUrl: String? = null
@@ -37,7 +39,7 @@ object ApiClient {
 
         val client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor(logging)
             .build()

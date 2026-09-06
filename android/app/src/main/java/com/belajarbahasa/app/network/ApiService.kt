@@ -2,6 +2,7 @@ package com.belajarbahasa.app.network
 
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -11,6 +12,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /**
  * Kontrak endpoint HARUS sinkron dengan backend Rust:
@@ -77,4 +79,35 @@ interface ApiService {
 
     @GET("api/daftar-isi/template")
     suspend fun getDaftarIsiTemplate(): ExportDaftarIsiResponse
+
+    // ===== PDF Viewer, Progress & Bookmark - Task 5 =====
+    // Sinkron dengan backend/src/handlers/materi.rs (get_materi_file),
+    // backend/src/handlers/progress.rs, backend/src/handlers/bookmarks.rs
+
+    /** @Streaming wajib ada supaya body tidak dibaca penuh ke memory oleh OkHttp
+     * sebelum sempat kita simpan ke file cache lokal (lihat PdfViewerScreen.kt). */
+    @Streaming
+    @GET("api/materi/{id}/file")
+    suspend fun downloadMateriFile(@Path("id") id: String): ResponseBody
+
+    @GET("api/materi/{id}/progress")
+    suspend fun getProgress(@Path("id") id: String): ProgressBaca
+
+    @PUT("api/materi/{id}/progress")
+    suspend fun updateProgress(
+        @Path("id") id: String,
+        @Body body: UpdateProgressRequest
+    ): ProgressBaca
+
+    @GET("api/materi/{materiId}/bookmarks")
+    suspend fun listBookmarks(@Path("materiId") materiId: String): List<Bookmark>
+
+    @POST("api/materi/{materiId}/bookmarks")
+    suspend fun createBookmark(
+        @Path("materiId") materiId: String,
+        @Body body: CreateBookmarkRequest
+    ): Bookmark
+
+    @DELETE("api/bookmarks/{id}")
+    suspend fun deleteBookmark(@Path("id") id: String): DeletedResponse
 }

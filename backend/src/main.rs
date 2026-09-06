@@ -6,7 +6,7 @@ mod storage;
 
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde_json::json;
@@ -95,6 +95,25 @@ async fn main() {
                 .put(handlers::materi::update_materi)
                 .delete(handlers::materi::delete_materi),
         )
+        // File PDF mentah untuk PDF Viewer Android (Task 5)
+        .route(
+            "/api/materi/:id/file",
+            get(handlers::materi::get_materi_file),
+        )
+        // Progress baca (Task 5)
+        .route(
+            "/api/materi/:id/progress",
+            get(handlers::progress::get_progress).put(handlers::progress::update_progress),
+        )
+        // Bookmark (Task 5)
+        .route(
+            "/api/materi/:materi_id/bookmarks",
+            get(handlers::bookmarks::list_bookmarks).post(handlers::bookmarks::create_bookmark),
+        )
+        .route(
+            "/api/bookmarks/:id",
+            delete(handlers::bookmarks::delete_bookmark),
+        )
         // Daftar Isi
         .route(
             "/api/materi/:materi_id/daftar-isi",
@@ -137,7 +156,7 @@ async fn health_check(
         "status": "ok",
         "db_connected": db_ok,
         "app": "belajar-bahasa-backend",
-        "version": "0.2.0"
+        "version": "0.3.0"
     }))
 }
 
