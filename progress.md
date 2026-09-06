@@ -7,8 +7,8 @@
 
 ## Status Terkini
 
-**Task aktif:** Task 4 - Daftar Isi (Backend + Android)
-**Status:** ✅ Task 3 (Halaman Home / File Manager - Android) CONFIRMED berhasil oleh user — build sukses (`assembleDebug`), berhasil install ke HP fisik via wireless debugging (`installDebug`), app jalan menampilkan folder & materi dari backend Rust.
+**Task aktif:** Task 5 - PDF Viewer (Android)
+**Status:** ✅ Task 4 (Daftar Isi - Backend + Android) CONFIRMED berhasil oleh user — `cargo build`, `cargo run`, `./gradlew assembleDebug`, `installDebug` semua sukses, dan pengujian manual di HP fisik (tambah bab, import JSON, export JSON) semua lolos.
 
 ---
 
@@ -138,17 +138,77 @@ Lihat detail lengkap di riwayat versi sebelumnya (struktur project, kriteria ber
 
 ---
 
+### Task 4 — Daftar Isi (Backend + Android) (2026-09-06)
+
+**Yang dikerjakan:**
+
+1. **File baru ditambahkan:**
+   - `backend/src/handlers/daftar_isi.rs` — semua handler untuk daftar isi:
+     - `GET /api/materi/:materi_id/daftar-isi` — ambil daftar isi (nested tree bilingual, langsung berupa `judul_sumber`/`judul_target` sesuai bahasa materi, tidak perlu tahu kode bahasa dari sisi client)
+     - `POST /api/materi/:materi_id/daftar-isi` — tambah bab/sub-bab manual
+     - `PUT /api/daftar-isi/:id` — edit bab (partial update pakai COALESCE, sama pola dengan folder/materi)
+     - `DELETE /api/daftar-isi/:id` — hapus bab (sub-bab di bawahnya ikut terhapus via `ON DELETE CASCADE`)
+     - `POST /api/materi/:materi_id/daftar-isi/import` — import JSON, **mengganti TOTAL** daftar isi materi (delete-lalu-insert dalam satu transaksi). Validasi: `bahasa_sumber`/`bahasa_target` di body JSON wajib sama persis dengan bahasa milik materi, supaya judul yang tersimpan konsisten dengan bahasa yang dipakai endpoint GET & export.
+     - `GET /api/materi/:materi_id/daftar-isi/export` — export ke bentuk JSON yang identik dengan bentuk import (round-trip backup-restore)
+     - `GET /api/daftar-isi/template` — template statis contoh JSON
+   - `android/.../ui/DaftarIsiScreen.kt` — UI daftar isi:
+     - List bab & sub-bab bertingkat (indentasi sesuai depth), toggle tampilan Bilingual / Sumber saja / Target saja
+     - Toolbar: Import JSON, Tambah Bab, Export
+     - Menu titik-tiga per bab: Tambah Sub-bab, Edit, Hapus (dengan dialog konfirmasi yang menyebutkan jumlah sub-bab ikut terhapus)
+     - Dialog Import JSON: tempel JSON → Preview (validasi + parsing client-side pakai kotlinx.serialization) → Konfirmasi Import. Ada juga tombol "Lihat contoh prompt AI" (prompt siap pakai untuk ChatGPT/Claude, mengikuti bahasa materi) dengan tombol salin ke clipboard.
+     - Dialog Export: tampilkan JSON hasil export + tombol Salin ke clipboard.
+
+2. **File diubah:**
+   - `backend/src/models.rs` — tambah struct `DaftarIsiNode`, `DaftarIsiFlatRow`, `CreateBabRequest`, `UpdateBabRequest`, `ImportDaftarIsiRequest`, `ImportBabItem`, `ExportDaftarIsiResponse`
+   - `backend/src/handlers/mod.rs` — tambah `pub mod daftar_isi;`
+   - `backend/src/main.rs` — tambah routing daftar isi, import `put` dari `axum::routing`
+   - `android/.../network/ApiModels.kt` — tambah data class `DaftarIsiNode`, `ImportBabItem`, `ImportDaftarIsiRequest`, `ExportDaftarIsiResponse`, `CreateBabRequest`, `UpdateBabRequest`
+   - `android/.../network/ApiService.kt` — tambah endpoint Retrofit untuk semua di atas
+   - `android/.../ui/HomeScreen.kt` — `MateriRow` sekarang menerima `onClick`, tap materi memanggil `onOpenMateri`
+   - `android/.../MainActivity.kt` — navigasi state-based sederhana (`sealed class AppScreen { Home, DaftarIsi }`) tanpa menambah dependency Navigation Compose baru, supaya tap materi di Home bisa membuka `DaftarIsiScreen`
+
+3. **Tidak ada migrasi SQL baru** — tabel `daftar_isi` & `daftar_isi_judul` sudah ada dari `migrations/0001_init.sql` Task 1, langsung dipakai.
+
+**Keputusan desain penting (asumsi, dicatat supaya tidak lupa):**
+- **Tidak ada tracking "selesai/belum" per bab** di skema DB saat ini (`progress_baca` hanya melacak progress per materi, bukan per bab). Chip "✓ Selesai" di `mockup-learn.html` bagian Daftar Isi **belum diimplementasikan**. Kalau nanti dibutuhkan, perlu kolom/tabel baru dulu di backend (misal `daftar_isi_selesai` per user+bab).
+- **Level & urutan bab dibuat OTOMATIS oleh Android**, bukan input manual dari user, untuk menyederhanakan form: tambah dari toolbar → level 1, urutan = jumlah bab level-1 + 1. Tambah "Sub-bab" dari menu titik-tiga sebuah bab → level = level induk + 1, `parent_id` = bab itu, urutan = jumlah anak induk itu + 1. Drag & drop reorder **belum ada** (V-next, sesuai roadmap V1.1+ di `Konsep-program-learn.md`).
+- **Import JSON mengganti TOTAL** seluruh daftar isi materi (bukan menambah/menggabungkan) — sudah diberi peringatan jelas di dialog import Android, tapi perlu diingat kalau nanti ada fitur "tambah dari JSON tanpa menghapus yang lama", itu endpoint terpisah, bukan modifikasi `import_daftar_isi` yang sudah ada.
+- **`parent_id` tidak bisa di-set eksplisit jadi `NULL`** lewat `PUT /api/daftar-isi/:id` (sama keterbatasan dengan folder/materi di Task 2, karena pakai `COALESCE`). Kalau nanti perlu "pindahkan sub-bab jadi bab utama", perlu endpoint terpisah.
+- Endpoint import mervalidasi `bahasa_sumber`/`bahasa_target` body harus sama persis dengan bahasa materi (bukan bahasa bebas) — mencegah data judul tersimpan dengan kode bahasa yang tidak match dengan yang dibaca balik oleh GET/export.
+- Navigasi Android sengaja tidak pakai library Navigation Compose (biar tidak nambah dependency untuk 2 layar) — kalau di Task 5/6 layar bertambah banyak (PDF Viewer, Kamus, dst), pertimbangkan migrasi ke Navigation Compose supaya state back-stack lebih rapi daripada sealed class manual.
+
+**Bug yang ditemukan & diperbaiki selama testing user:**
+1. `error[E0277]: the trait bound &mut ...: Executor<'_> is not satisfied` di beberapa baris `daftar_isi.rs` (fungsi `insert_daftar_isi_items`) → **Penyebab:** `sqlx::Transaction` implement `Deref`/`DerefMut` ke `PoolConnection` (bukan ke dirinya sendiri) — yang implement `Executor` adalah `PoolConnection`, bukan `Transaction` langsung. Jumlah `*` yang dibutuhkan tergantung apakah `tx` itu **owned** `Transaction` (satu `*` sudah otomatis kena `Deref` ke `PoolConnection`, jadi `&mut *tx` sudah benar) atau **referensi** `&mut Transaction` seperti di fungsi helper ini (butuh dua `*`: `*` pertama membuka `&mut`-nya jadi `Transaction`, `*` kedua baru kena `Deref` ke `PoolConnection`) → **fix:** ganti `&mut *tx` jadi `&mut **tx` di dalam `insert_daftar_isi_items` (2 titik: `.fetch_one()` dan `.execute()`), sementara pemakaian `&mut *tx` di `import_daftar_isi` (tx owned) dibiarkan karena sudah benar.
+
+**Kriteria berhasil (dikonfirmasi user):**
+- [x] `cargo build` sukses tanpa error (setelah fix bug Executor di atas)
+- [x] `cargo run` sukses, server jalan normal
+- [x] `./gradlew assembleDebug` sukses tanpa error
+- [x] `./gradlew installDebug` sukses, APK ter-install di HP fisik
+- [x] App terbuka tanpa crash, tap materi di HomeScreen berhasil membuka halaman Daftar Isi
+- [x] Tambah bab baru berhasil, muncul di list
+- [x] Import JSON berhasil (mengganti daftar isi lama sesuai desain)
+- [x] Export berhasil, JSON muncul di dialog dan bisa disalin
+
+**Hasil:** ✅ TASK 4 SELESAI TOTAL (dikonfirmasi user — build backend & Android sukses, seluruh fungsi utama Daftar Isi diuji manual di HP: tambah bab, import JSON, export JSON, semua lolos)
+
+---
+
 ## Next Step
 
 Kandidat task berikutnya (urutan disarankan, tapi bisa didiskusikan ulang):
 
-1. **Task 4 — Daftar Isi (Backend + Android)** ⬅️ **BERIKUTNYA**
-   - Backend: endpoint import JSON daftar isi (`POST /api/materi/:id/daftar-isi/import`), export (`GET .../export`), manual CRUD bab/sub-bab (`POST`/`PUT`/`DELETE /api/daftar-isi/:id`)
-   - Android: UI daftar isi bilingual sesuai mockup bagian 2 (list bab + sub-bab dengan indentasi, toggle Bilingual/JP-only/ID-only, tombol Import JSON & Tambah Manual, progress bar bab selesai)
-2. **Task 5 — PDF Viewer (Android)**: integrasi library PDF viewer, navigasi halaman, progress tracking (`PUT /api/materi/:id/progress`).
-3. **Task 6 — Kamus & Kosakata (Backend + Android)**: search kamus, modal tambah kosakata, deduplikasi.
+1. **Task 5 — PDF Viewer (Android)** ⬅️ **BERIKUTNYA**
+   - Integrasi library PDF viewer (mis. AndroidPdfViewer / PDF.js via WebView) sesuai mockup bagian 3
+   - Navigasi halaman (next/prev, swipe, jump to page), zoom (75%/100%/125%/150%)
+   - Progress tracking: `PUT /api/materi/:id/progress` (endpoint ini sudah didefinisikan di `Konsep-program-learn.md` bagian 5.4 tapi **belum diimplementasikan** di backend — perlu dicek dulu apakah sudah ada dari task sebelumnya atau perlu dibuat baru di Task 5 ini)
+   - Bookmark halaman: `GET/POST /api/materi/:id/bookmarks`, `DELETE /api/bookmarks/:id` (juga belum diimplementasikan, cek `Konsep-program-learn.md` bagian 5.4)
+   - Tombol "Kosakata" di toolbar PDF viewer bisa disiapkan sebagai placeholder navigasi ke Task 6 (belum perlu fungsional penuh)
+2. **Task 6 — Kamus & Kosakata (Backend + Android)**: search kamus, modal tambah kosakata, deduplikasi.
 
-**PENTING:** Sebelum lanjut ke Task 4, selalu tanyakan ke user file-file project Android & backend terakhir untuk di-upload (terutama file-file yang baru dibuat/diubah di Task 3: `ApiClient.kt`, `ApiModels.kt`, `ApiService.kt`, `HomeScreen.kt`, `app/build.gradle.kts`, plus struct backend `daftar_isi` & `daftar_isi_judul` di `models.rs`), jangan berasumsi dari `progress.md` saja bahwa kode di atas 100% sama dengan yang ada di device/repo user.
+**PENTING:** Sebelum lanjut ke Task 5, selalu tanyakan ke user file-file project Android & backend terakhir untuk di-upload (terutama file-file yang baru dibuat/diubah di Task 4: `daftar_isi.rs`, `models.rs`, `main.rs`, `handlers/mod.rs`, `DaftarIsiScreen.kt`, `ApiModels.kt`, `ApiService.kt`, `HomeScreen.kt`, `MainActivity.kt`), jangan berasumsi dari `progress.md` saja bahwa kode di atas 100% sama dengan yang ada di device/repo user — apalagi setelah ada fix manual langsung di file `daftar_isi.rs` pada sesi ini.
+
+Juga perlu dicek: apakah tabel `progress_baca` dan `bookmarks` (sudah ada skemanya dari migrasi Task 1) sudah punya endpoint API-nya atau belum, supaya Task 5 tidak duplikat kerjaan.
 
 ---
 
@@ -165,15 +225,16 @@ aplikasi-belajar-bahasa/
 │   ├── storage/
 │   │   └── pdf/               # File PDF hasil upload (di-gitignore)
 │   └── src/
-│       ├── main.rs
+│       ├── main.rs            # + routing daftar isi (Task 4)
 │       ├── state.rs
 │       ├── error.rs
-│       ├── models.rs
+│       ├── models.rs          # + struct daftar isi (Task 4)
 │       ├── storage.rs
 │       └── handlers/
-│           ├── mod.rs
+│           ├── mod.rs         # + mod daftar_isi (Task 4)
 │           ├── folders.rs
-│           └── materi.rs
+│           ├── materi.rs
+│           └── daftar_isi.rs  # baru (Task 4)
 ├── android/                  # Kotlin + Jetpack Compose
 │   ├── settings.gradle.kts
 │   ├── build.gradle.kts
@@ -184,19 +245,20 @@ aplikasi-belajar-bahasa/
 │       └── src/main/
 │           ├── AndroidManifest.xml
 │           └── java/com/belajarbahasa/app/
-│               ├── MainActivity.kt        # render HomeScreen() (Task 3)
-│               ├── BackendPrefs.kt        # baru (Task 3)
+│               ├── MainActivity.kt        # navigasi Home <-> DaftarIsi (Task 4)
+│               ├── BackendPrefs.kt        # (Task 3)
 │               ├── network/
-│               │   ├── ApiClient.kt       # baru (Task 3)
-│               │   ├── ApiModels.kt       # baru (Task 3)
-│               │   └── ApiService.kt      # baru (Task 3)
+│               │   ├── ApiClient.kt       # (Task 3)
+│               │   ├── ApiModels.kt       # + model daftar isi (Task 4)
+│               │   └── ApiService.kt      # + endpoint daftar isi (Task 4)
 │               ├── ui/
-│               │   ├── HomeScreen.kt      # baru (Task 3)
+│               │   ├── HomeScreen.kt      # + onOpenMateri (Task 4)
+│               │   ├── DaftarIsiScreen.kt # baru (Task 4)
 │               │   └── theme/
-│               │       └── Theme.kt       # baru (Task 3)
+│               │       └── Theme.kt       # (Task 3)
 │               └── util/
-│                   ├── DateUtils.kt       # baru (Task 3)
-│                   └── FileUtils.kt       # baru (Task 3)
+│                   ├── DateUtils.kt       # (Task 3)
+│                   └── FileUtils.kt       # (Task 3)
 ├── Konsep-program-learn.md
 ├── mockup-learn.html
 ├── progress.md               # File ini
