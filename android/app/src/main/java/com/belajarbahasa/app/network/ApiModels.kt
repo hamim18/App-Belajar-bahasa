@@ -178,3 +178,140 @@ data class CreateBookmarkRequest(
     val halaman: Int,
     val catatan: String? = null
 )
+
+// ============================================================
+// KAMUS & KOSAKATA (Task 6)
+// ============================================================
+
+/**
+ * Satu baris hasil pencarian kamus (GET /api/kamus).
+ * Sinkron dengan backend/src/models.rs -> struct KamusListItem.
+ * bahasa_target ikut dikirim backend (walau berasal dari query param) supaya
+ * Android tidak perlu tahu bahasa default user - tinggal baca dari response.
+ */
+@Serializable
+data class KamusListItem(
+    val id: String,
+    val kata_asli: String,
+    val bahasa_sumber: String,
+    val is_custom: Boolean,
+    val terjemahan: String? = null,
+    val reading: String? = null,
+    val tipe_kata: String? = null,
+    val contoh_kalimat: String? = null,
+    val bahasa_target: String,
+    val jumlah_materi: Long,
+    val jumlah_muncul: Long
+)
+
+/** Response GET /api/kamus */
+@Serializable
+data class KamusSearchResponse(
+    val items: List<KamusListItem>,
+    val total: Long
+)
+
+/** Satu baris kemunculan kata, dikelompokkan per (materi, bab). */
+@Serializable
+data class KemunculanMateri(
+    val materi_id: String,
+    val judul_materi: String,
+    val bab_id: String? = null,
+    val judul_bab: String? = null,
+    val halaman_list: List<Int>
+)
+
+/** Response GET /api/kamus/{id} dan POST/PUT ke endpoint kamus. */
+@Serializable
+data class KamusDetail(
+    val id: String,
+    val kata_asli: String,
+    val bahasa_sumber: String,
+    val is_custom: Boolean,
+    val bahasa_target: String,
+    val terjemahan: String? = null,
+    val reading: String? = null,
+    val tipe_kata: String? = null,
+    val contoh_kalimat: String? = null,
+    val kemunculan: List<KemunculanMateri>
+)
+
+/** Body POST /api/kamus - tambah kata custom baru / terjemahan baru. */
+@Serializable
+data class CreateKamusRequest(
+    val kata_asli: String,
+    val bahasa_sumber: String,
+    val terjemahan: String,
+    val bahasa_target: String,
+    val reading: String? = null,
+    val tipe_kata: String? = null,
+    val contoh_kalimat: String? = null
+)
+
+/** Body PUT /api/kamus/{id} - upsert terjemahan untuk kata_id di path. */
+@Serializable
+data class UpdateKamusTerjemahanRequest(
+    val bahasa_target: String,
+    val terjemahan: String? = null,
+    val reading: String? = null,
+    val tipe_kata: String? = null,
+    val contoh_kalimat: String? = null
+)
+
+/**
+ * Satu baris kosakata_konteks + info kamus yang sudah di-join.
+ * Sinkron dengan backend/src/models.rs -> struct KosakataItem.
+ * halaman_terkait = semua halaman (di materi yang sama) tempat kata ini
+ * pernah ditambahkan - dipakai untuk badge "📄 3, 5, 12" di mockup.
+ */
+@Serializable
+data class KosakataItem(
+    val id: String,
+    val kata_id: String,
+    val kata_asli: String,
+    val reading: String? = null,
+    val terjemahan: String? = null,
+    val tipe_kata: String? = null,
+    val catatan_pribadi: String? = null,
+    val folder_kustom: String? = null,
+    val halaman: Int,
+    val bab_id: String? = null,
+    val halaman_terkait: List<Int> = emptyList()
+)
+
+/** Baris agregat kosakata per bab (dedup per kata). */
+@Serializable
+data class KosakataBabItem(
+    val kata_id: String,
+    val kata_asli: String,
+    val reading: String? = null,
+    val terjemahan: String? = null,
+    val tipe_kata: String? = null,
+    val halaman_list: List<Int>
+)
+
+/**
+ * Body POST /api/kosakata. terjemahan/reading/tipe_kata/contoh_kalimat HANYA
+ * dipakai backend kalau kata_asli belum ada di kamus untuk bahasa_sumber
+ * materi ini (kata baru) - kalau kata sudah ada, field itu diabaikan backend.
+ */
+@Serializable
+data class CreateKosakataRequest(
+    val kata_asli: String,
+    val materi_id: String,
+    val bab_id: String? = null,
+    val halaman: Int,
+    val catatan_pribadi: String? = null,
+    val folder_kustom: String? = null,
+    val terjemahan: String? = null,
+    val reading: String? = null,
+    val tipe_kata: String? = null,
+    val contoh_kalimat: String? = null
+)
+
+/** Body PUT /api/kosakata/{id} - hanya catatan_pribadi & folder_kustom. */
+@Serializable
+data class UpdateKosakataRequest(
+    val catatan_pribadi: String? = null,
+    val folder_kustom: String? = null
+)

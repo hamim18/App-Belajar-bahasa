@@ -7,8 +7,8 @@
 
 ## Status Terkini
 
-**Task aktif:** Task 6 - Kamus & Kosakata (Backend + Android)
-**Status:** ✅ Task 5 (PDF Viewer - Backend + Android) CONFIRMED berhasil oleh user — `cargo build`, `cargo run`, `./gradlew assembleDebug`, `installDebug` semua sukses, dan pengujian manual di HP fisik (buka PDF dari Daftar Isi, swipe halaman, pinch/double-tap zoom, tambah/hapus/lompat ke bookmark, resume dari halaman terakhir) semua lolos setelah 1 ronde perbaikan bug kecil.
+**Task aktif:** Belum ada - Task 6 (Kamus & Kosakata) sudah SELESAI dan dikonfirmasi. Menunggu keputusan task berikutnya (lihat "Next Step").
+**Status:** ✅ Task 6 (Kamus & Kosakata - Backend + Android) CONFIRMED berhasil oleh user — `cargo build`, `./gradlew assembleDebug`, `installDebug` semua sukses, dan pengujian manual di HP fisik (tambah/edit/hapus kosakata lewat ModalBottomSheet, sugesti kamus otomatis, halaman Kamus dengan search & filter tipe kata, halaman Detail Kata dengan daftar kemunculan) semua lolos setelah 2 ronde perbaikan (1x bug compile Kotlin, 1x bug pencarian tidak mencakup furigana/terjemahan).
 
 ---
 
@@ -214,7 +214,7 @@ Lihat detail lengkap di riwayat versi sebelumnya (struktur project, kriteria ber
      - Tap di tengah layar toggle toolbar atas/bawah.
      - Progress baca disimpan ke backend dengan debounce 800ms setelah pindah halaman (best-effort, gagal simpan tidak memblokir baca — sesuai filosofi offline-first).
      - Bookmark: tombol tambah (dialog input halaman+catatan) dan tombol lihat daftar (dialog list, klik item untuk lompat ke halaman itu, tombol hapus terpisah).
-     - Tombol "📝 Kosakata" masih placeholder (Toast "Fitur Kosakata akan hadir di Task 6").
+     - Tombol "📝 Kosakata" masih placeholder (Toast "Fitur Kosakata akan hadir di Task 6") — **sudah diganti fungsional penuh di Task 6.**
 
 2. **File diubah (backend):**
    - `backend/src/models.rs` — tambah struct `ProgressBaca`, `UpdateProgressRequest`, `Bookmark`, `CreateBookmarkRequest`.
@@ -267,19 +267,94 @@ Lihat detail lengkap di riwayat versi sebelumnya (struktur project, kriteria ber
 
 ---
 
+### Task 6 — Kamus & Kosakata (Backend + Android) (2026-09-07)
+
+**Yang dikerjakan:**
+
+1. **File baru ditambahkan (backend):**
+   - `backend/src/handlers/kamus.rs`:
+     - `GET /api/kamus?q=&bahasa_sumber=&bahasa_target=&tipe_kata=&limit=&offset=` — cari kata di kamus. `q` di-ILIKE ke **kata_asli (kanji), reading (furigana), DAN terjemahan sekaligus** (lihat catatan bugfix di bawah). `bahasa_sumber`/`bahasa_target` opsional — kalau tidak dikirim, backend pakai `bahasa_sumber_default`/`bahasa_target_default` milik user (tabel `users`). Response termasuk `total` (untuk pagination) dan `jumlah_materi`/`jumlah_muncul` per kata (dihitung dari `kosakata_konteks`).
+     - `GET /api/kamus/:id?bahasa_target=` — detail satu kata + daftar `kemunculan` (dikelompokkan per materi+bab, tiap grup punya `halaman_list`).
+     - `POST /api/kamus` — tambah kata custom baru, atau kalau `kata_asli`+`bahasa_sumber` sudah ada, upsert terjemahan untuk `bahasa_target` yang dikirim.
+     - `PUT /api/kamus/:id` — upsert terjemahan (reading/tipe_kata/contoh_kalimat/terjemahan) untuk satu `bahasa_target`, tanpa mengubah `kata_asli`/`bahasa_sumber` (itu identitas baris kamus).
+   - `backend/src/handlers/kosakata.rs`:
+     - `GET /api/materi/:materi_id/halaman/:halaman/kosakata?bab_id=` — list kosakata di satu halaman (bab_id opsional; kalau tidak dikirim, ambil lintas bab).
+     - `GET /api/materi/:materi_id/bab/:bab_id/kosakata` — list kosakata dedup per bab (gabungan semua halaman dalam bab itu, `halaman_list`).
+     - `POST /api/kosakata` — tambah kata ke konteks (materi+bab+halaman). Kalau `kata_asli` belum ada di kamus untuk `bahasa_sumber` materi ini, otomatis dibuat sebagai kata custom (field `terjemahan` WAJIB diisi kalau kata baru). Kalau kombinasi (kata, materi, bab, halaman) sudah ada, `catatan_pribadi`/`folder_kustom` di-UPDATE, bukan duplikat.
+     - `PUT /api/kosakata/:id` — update `catatan_pribadi`/`folder_kustom`.
+     - `DELETE /api/kosakata/:id` — hapus dari konteks (tidak menghapus kata dari kamus master).
+   - `android/.../ui/KosakataSheet.kt` — **ModalBottomSheet** (bukan Dialog fullscreen atau layar terpisah — keputusan disepakati di awal task) untuk kosakata per halaman:
+     - List kosakata di halaman aktif + pencarian lokal (kanji/furigana/terjemahan — lihat bugfix di bawah)
+     - Dialog Tambah Kosakata: sugesti otomatis dari `GET /api/kamus` saat mengetik (debounce 300ms), auto-isi terjemahan/reading/tipe kalau klik sugesti kata yang sudah ada
+     - Dialog Edit (hanya `catatan_pribadi` — ubah terjemahan/reading dilakukan lewat Kamus Detail, karena itu perubahan global ke kata, bukan ke satu baris konteks)
+     - Konfirmasi hapus
+   - `android/.../ui/KamusScreen.kt` — halaman Kamus (search + filter tipe kata N/V/Adj/Adv, list dengan jumlah materi/muncul)
+   - `android/.../ui/KamusDetailScreen.kt` — halaman Detail Kata (terjemahan, contoh kalimat, daftar "Muncul di Materi" per bab)
+
+2. **File diubah (backend):**
+   - `backend/src/models.rs` — tambah struct `KamusListItem`, `KamusSearchResponse`, `KamusDetail`, `KamusBaseRow`, `KemunculanRow`, `KemunculanMateri`, `CreateKamusRequest`, `UpdateKamusTerjemahanRequest`, `SearchKamusQuery`, `KamusDetailQuery`, `KosakataItem`, `KosakataBabItem`, `CreateKosakataRequest`, `UpdateKosakataRequest`, `KosakataHalamanQuery`
+   - `backend/src/handlers/mod.rs` — tambah `pub mod kamus;` dan `pub mod kosakata;`
+   - `backend/src/main.rs` — tambah routing kamus & kosakata (lihat daftar endpoint di atas); versi di `health_check` naik ke `0.4.0`
+
+3. **File diubah (Android):**
+   - `android/.../network/ApiModels.kt` — tambah semua data class yang sinkron dengan struct backend di atas
+   - `android/.../network/ApiService.kt` — tambah endpoint Retrofit: `searchKamus`, `getKamusDetail`, `createKamus`, `updateKamusTerjemahan`, `listKosakataHalaman`, `listKosakataBab`, `createKosakata`, `updateKosakata`, `deleteKosakata`
+   - `android/.../ui/HomeScreen.kt` — tambah ikon 📖 di app bar (`onOpenKamus`) untuk membuka `KamusScreen`
+   - `android/.../ui/PdfViewerScreen.kt` — tombol "📝 Kosakata" (dulu Toast placeholder Task 5) sekarang membuka `KosakataSheet`; `bab_id` untuk kosakata di-resolve OTOMATIS dari `daftarIsiTree` (di-fetch sekali per materi) berdasarkan halaman yang sedang dibaca lewat helper `findBabForHalaman` (pilih rentang bab/sub-bab TERSEMPIT yang mengandung halaman itu; kalau tidak ada yang cocok, `bab_id = null` — didukung karena kolom nullable di DB)
+   - `android/.../MainActivity.kt` — tambah `AppScreen.Kamus` dan `AppScreen.KamusDetail(kataId)`; `PdfViewerScreen` sekarang menerima `bahasaSumber`/`bahasaTarget` dari `materi`
+
+4. **Tidak ada migrasi SQL baru** — tabel `kamus`, `kamus_terjemahan`, `kosakata_konteks` sudah ada dari `migrations/0001_init.sql` Task 1, langsung dipakai.
+
+**Keputusan desain penting (asumsi, dicatat supaya tidak lupa):**
+- **ModalBottomSheet untuk Kosakata** (bukan Dialog fullscreen/layar terpisah) — disepakati di awal task supaya konteks halaman PDF yang sedang dibaca tidak hilang, dan bisa di-swipe-dismiss.
+- **Dedup kosakata pakai `bab_id IS NOT DISTINCT FROM $x`, BUKAN `ON CONFLICT`** — karena `kosakata_konteks.bab_id` nullable dan UNIQUE constraint di Postgres tidak menganggap dua `NULL` sebagai duplikat. Kalau ini tidak diperhatikan, kata dengan `bab_id = NULL` bisa ke-insert dobel di halaman yang sama. Dedup dicek manual via `SELECT` sebelum `INSERT`/`UPDATE`.
+- **`halaman_terkait` di-scope SATU MATERI (lintas bab), bukan per-bab** — berbeda dari sample query Appendix C di `Konsep-program-learn.md` yang men-scope ke `(materi_id, bab_id)` yang sama persis. Diputuskan begini karena itu yang ditunjukkan `mockup-learn.html` (kata "食べる" muncul di p.5 Bab 1, p.12 Bab 2, p.30 Bab 5 — lintas bab).
+- **`bab_id` untuk kosakata di-resolve otomatis di Android** dari Daftar Isi materi (bukan diminta manual dari user) — kalau halaman yang sedang dibaca tidak masuk rentang bab manapun (misal daftar isi belum lengkap), `bab_id` dikirim `null` dan kosakata tetap bisa ditambahkan tanpa bab.
+- **Fitur ⭐ Favorit di mockup BELUM diimplementasikan** — tidak ada tabel/kolom "favorit" di skema DB. Kalau nanti dibutuhkan, perlu tabel baru dulu (misal `kamus_favorit` per user).
+- **`tipe_kata` adalah teks bebas** (konvensi: N=Nomina, V=Verba, Adj=Adjektiva, Adv=Adverbia) — tidak divalidasi di backend sebagai enum, supaya fleksibel untuk bahasa lain di masa depan (fondasi multibahasa).
+- **KamusScreen & KamusDetailScreen tidak meminta `bahasaSumber`/`bahasaTarget` dari pemanggil (MainActivity)** — sengaja dikirim `null` ke backend, yang otomatis pakai bahasa default user. Label bahasa di UI diisi belakangan dari hasil response pertama (`item.bahasa_sumber`/`item.bahasa_target`).
+
+**Bug yang ditemukan & diperbaiki (2 ronde, semua dikonfirmasi user):**
+
+*Ronde 1 — gagal compile (`./gradlew assembleDebug`):*
+1. `Cannot access 'weight': it is internal in 'androidx.compose.foundation.layout'` di `KamusScreen.kt` dan `KamusDetailScreen.kt` → **Penyebab:** `weight()` itu **member function** dari interface `ColumnScope`/`RowScope` (dideklarasikan sebagai `fun Modifier.weight(...)` DI DALAM interface tsb), BUKAN top-level function di package `androidx.compose.foundation.layout`. Menambahkan `import androidx.compose.foundation.layout.weight` secara eksplisit malah nyantol ke simbol internal lain yang kebetulan sama nama di package itu, bukan ke member function yang dimaksud. → **Fix:** hapus baris `import ...weight` di kedua file — Kotlin otomatis resolve `weight()` dari implicit receiver `ColumnScope` begitu dipanggil di dalam lambda `Column { ... }`, tanpa perlu import apapun.
+
+*Ronde 2 — build & install sukses, tapi 1 bug fungsional ditemukan saat testing manual:*
+1. **Pencarian tidak mencakup furigana (reading) & hanya kanji di halaman Kamus** → User melaporkan: pencarian di modal Kosakata per halaman hanya bisa cari kanji+terjemahan (belum furigana), dan pencarian di halaman Kamus hanya bisa cari kanji saja (belum furigana maupun terjemahan). → **Fix:**
+   - Backend: query SQL `search_kamus` (baik query list maupun query `COUNT` untuk `total`) diubah dari `k.kata_asli ILIKE $3` saja menjadi `k.kata_asli ILIKE $3 OR kt.reading ILIKE $3 OR kt.terjemahan ILIKE $3` — otomatis memperbaiki DUA tempat sekaligus (halaman Kamus dan sugesti kata di modal Tambah Kosakata, karena keduanya memanggil endpoint `GET /api/kamus` yang sama).
+   - Android: filter pencarian lokal di `KosakataSheet.kt` (untuk kosakata per halaman, yang datanya sudah di-fetch penuh dan difilter di client, bukan lewat query param) ditambah pengecekan `reading`, sebelumnya hanya `kata_asli` dan `terjemahan`.
+
+**Kriteria berhasil (dikonfirmasi user, build backend & Android + testing manual di HP, SEMUA SUKSES setelah 2 ronde perbaikan):**
+- [x] `cargo build` & `cargo run` sukses tanpa error
+- [x] `./gradlew assembleDebug` & `installDebug` sukses tanpa error (setelah fix bug `weight` internal)
+- [x] Tap "📝 Kosakata" di PDF Viewer → ModalBottomSheet muncul dari bawah, tidak lagi Toast placeholder
+- [x] Tambah kosakata baru (kata belum ada di kamus) dengan terjemahan wajib diisi → berhasil, muncul di list
+- [x] Ketik kata yang mirip dengan yang sudah ada di kamus → sugesti muncul otomatis → tap sugesti → form terisi otomatis (terjemahan/reading/tipe)
+- [x] Edit catatan pribadi salah satu kosakata → tersimpan
+- [x] Hapus salah satu kosakata → hilang dari list
+- [x] Tap ikon 📖 di Home → halaman Kamus terbuka, kata yang baru ditambah muncul di list
+- [x] Filter tipe kata (N/V/Adj/Adv) di halaman Kamus berfungsi
+- [x] Tap salah satu kata di Kamus → halaman Detail Kata terbuka, menampilkan terjemahan + daftar "Muncul di Materi" per bab
+- [x] Pencarian pakai furigana di halaman Kamus → kata dengan reading itu ditemukan
+- [x] Pencarian pakai terjemahan di halaman Kamus → kata itu ditemukan
+- [x] Pencarian pakai furigana di modal Kosakata per halaman → kosakata yang cocok ditemukan
+- [x] Pencarian pakai kanji tetap berfungsi seperti biasa di semua tempat di atas
+
+**Hasil:** ✅ TASK 6 SELESAI TOTAL (dikonfirmasi user — build backend & Android sukses, seluruh fungsi Kamus & Kosakata diuji manual di HP fisik, semua lolos setelah 2 ronde perbaikan: 1x fix compile error `weight` internal, 1x fix pencarian supaya mencakup kanji+furigana+terjemahan di semua tempat)
+
+---
+
 ## Next Step
 
-Kandidat task berikutnya (urutan disarankan, tapi bisa didiskusikan ulang):
+Semua fitur inti MVP (V1.0) di `Konsep-program-learn.md` — upload & render PDF, daftar isi manual/import JSON, kamus, kosakata per halaman, navigasi PDF, progress tracking — sudah selesai diimplementasikan (Task 1-6). Belum ada keputusan task berikutnya; beberapa kandidat yang bisa didiskusikan dengan user:
 
-1. **Task 6 — Kamus & Kosakata (Backend + Android)** ⬅️ **BERIKUTNYA**
-   - Backend: endpoint kamus (`GET /api/kamus?q=...`, `GET /api/kamus/:id`, `POST /api/kamus`) dan kosakata konteks (`GET`/`POST`/`PUT`/`DELETE /api/kosakata`, termasuk endpoint per halaman & per bab yang sudah didesain di `Konsep-program-learn.md` bagian 5.3) — tabel `kamus`, `kamus_terjemahan`, `kosakata_konteks` sudah ada dari migrasi Task 1, tinggal dicek lagi skemanya sebelum mulai.
-   - Android: modal Kosakata per halaman (list kosakata + tombol tambah), modal Tambah Kosakata dengan sugesti dari kamus & deduplikasi (sesuai mockup bagian 4 & 5), halaman Kamus + Detail Kata (mockup bagian 6 & 7).
-   - Tombol "📝 Kosakata" yang sekarang masih placeholder Toast di `PdfViewerScreen.kt` akan diganti jadi navigasi ke modal Kosakata halaman aktif.
-   - Perlu didiskusikan di awal task: bagaimana modal Kosakata (yang menurut mockup adalah overlay di atas PDF Viewer) diimplementasikan — apakah sebagai `ModalBottomSheet`/`Dialog` di atas `PdfViewerScreen`, atau layar terpisah yang menutupi PDF sementara.
+1. **Halaman Pengaturan / Settings** (mockup bagian 8, ditandai V1.1) — ubah bahasa default, dark mode, font size, export/import data JSON, export ke Anki (.apkg). Beberapa dari ini (dark mode, font size) murni UI Android; export/import data & Anki butuh endpoint backend baru.
+2. **Sistem Autentikasi (login/register) yang sesungguhnya** — saat ini masih pakai 1 "default user" otomatis (lihat catatan Task 2). Ini utang teknis yang disebutkan dari Task 2 dan belum pernah dikerjakan.
+3. **Pencarian materi/folder di Home** — kolom cari di `HomeScreen.kt` saat ini (kalau ada) perlu dicek lagi apakah sudah benar-benar query ke backend atau baru filter lokal.
+4. **Flashcard dengan Spaced Repetition** (mockup bagian 9, V1.2) — butuh skema DB baru (belum ada di `migrations/0001_init.sql`) untuk tracking interval SRS per kosakata per user.
+5. **Statistik & Text-to-Speech** (mockup bagian 10 & 11, V1.2) — juga butuh desain skema/endpoint baru dari nol.
 
-**PENTING:** Sebelum lanjut ke Task 6, selalu tanyakan ke user file-file project Android & backend terakhir untuk di-upload (terutama file-file yang baru dibuat/diubah di Task 5: `progress.rs`, `bookmarks.rs`, `materi.rs`, `models.rs`, `mod.rs`, `main.rs`, `PdfViewerScreen.kt`, `DaftarIsiScreen.kt`, `MainActivity.kt`, `ApiModels.kt`, `ApiService.kt`, `ApiClient.kt`, `build.gradle.kts`), jangan berasumsi dari `progress.md` saja bahwa kode di atas 100% sama dengan yang ada di device/repo user — apalagi setelah 2 ronde perbaikan bug manual di sesi ini.
-
-Juga perlu dicek: skema tabel `kamus`, `kamus_terjemahan`, `kosakata_konteks` dari `migrations/0001_init.sql` Task 1 — pastikan field-fieldnya (terutama `tipe_kata`, `reading`, `contoh_kalimat`, `folder_kustom`) masih sesuai kebutuhan sebelum mulai desain endpoint Task 6.
+**PENTING:** Sebelum lanjut ke task berikutnya (apapun yang dipilih), selalu tanyakan ke user file-file project Android & backend terkini untuk diupload — terutama file yang baru diubah di Task 6 (`kamus.rs`, `kosakata.rs`, `models.rs`, `mod.rs`, `main.rs`, `KosakataSheet.kt`, `KamusScreen.kt`, `KamusDetailScreen.kt`, `HomeScreen.kt`, `PdfViewerScreen.kt`, `MainActivity.kt`, `ApiModels.kt`, `ApiService.kt`), jangan berasumsi dari `progress.md` saja bahwa kode di atas 100% sama dengan yang ada di device/repo user — apalagi setelah 2 ronde perbaikan bug di sesi ini (termasuk fix pencarian furigana yang menyentuh SQL di `kamus.rs`).
 
 ---
 
@@ -296,43 +371,48 @@ aplikasi-belajar-bahasa/
 │   ├── storage/
 │   │   └── pdf/               # File PDF hasil upload (di-gitignore)
 │   └── src/
-│       ├── main.rs            # + routing file/progress/bookmark (Task 5)
+│       ├── main.rs            # + routing kamus/kosakata, versi 0.4.0 (Task 6)
 │       ├── state.rs
 │       ├── error.rs
-│       ├── models.rs          # + struct ProgressBaca, Bookmark (Task 5)
+│       ├── models.rs          # + struct Kamus*/Kosakata* (Task 6)
 │       ├── storage.rs
 │       └── handlers/
-│           ├── mod.rs         # + mod progress, mod bookmarks (Task 5)
+│           ├── mod.rs         # + mod kamus, mod kosakata (Task 6)
 │           ├── folders.rs
-│           ├── materi.rs      # + get_materi_file (Task 5)
+│           ├── materi.rs
 │           ├── daftar_isi.rs
-│           ├── progress.rs    # baru (Task 5)
-│           └── bookmarks.rs   # baru (Task 5)
+│           ├── progress.rs
+│           ├── bookmarks.rs
+│           ├── kamus.rs       # baru (Task 6)
+│           └── kosakata.rs    # baru (Task 6)
 ├── android/                  # Kotlin + Jetpack Compose
 │   ├── settings.gradle.kts
 │   ├── build.gradle.kts
 │   ├── gradle.properties
 │   └── app/
-│       ├── build.gradle.kts   # + opt-in ExperimentalFoundationApi, versionCode 3 (Task 5)
+│       ├── build.gradle.kts
 │       ├── proguard-rules.pro
 │       └── src/main/
 │           ├── AndroidManifest.xml
 │           └── java/com/belajarbahasa/app/
-│               ├── MainActivity.kt        # + AppScreen.PdfViewer (Task 5)
-│               ├── BackendPrefs.kt        # (Task 3)
+│               ├── MainActivity.kt        # + AppScreen.Kamus/KamusDetail (Task 6)
+│               ├── BackendPrefs.kt
 │               ├── network/
-│               │   ├── ApiClient.kt       # + readTimeout 120s (Task 5)
-│               │   ├── ApiModels.kt       # + ProgressBaca, Bookmark, dst (Task 5)
-│               │   └── ApiService.kt      # + endpoint file/progress/bookmark (Task 5)
+│               │   ├── ApiClient.kt
+│               │   ├── ApiModels.kt       # + KamusListItem, KosakataItem, dst (Task 6)
+│               │   └── ApiService.kt      # + endpoint kamus/kosakata (Task 6)
 │               ├── ui/
-│               │   ├── HomeScreen.kt      # (Task 4)
-│               │   ├── DaftarIsiScreen.kt # + FAB Baca, ikon ▶ per bab (Task 5)
-│               │   ├── PdfViewerScreen.kt # baru (Task 5)
+│               │   ├── HomeScreen.kt      # + ikon Kamus di app bar (Task 6)
+│               │   ├── DaftarIsiScreen.kt
+│               │   ├── PdfViewerScreen.kt # + buka KosakataSheet, resolve bab_id (Task 6)
+│               │   ├── KosakataSheet.kt   # baru (Task 6)
+│               │   ├── KamusScreen.kt     # baru (Task 6)
+│               │   ├── KamusDetailScreen.kt # baru (Task 6)
 │               │   └── theme/
-│               │       └── Theme.kt       # (Task 3)
+│               │       └── Theme.kt
 │               └── util/
-│                   ├── DateUtils.kt       # (Task 3)
-│                   └── FileUtils.kt       # (Task 3)
+│                   ├── DateUtils.kt
+│                   └── FileUtils.kt
 ├── Konsep-program-learn.md
 ├── mockup-learn.html
 ├── progress.md               # File ini

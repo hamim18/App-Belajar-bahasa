@@ -135,6 +135,32 @@ async fn main() {
             "/api/daftar-isi/:id",
             put(handlers::daftar_isi::update_bab).delete(handlers::daftar_isi::delete_bab),
         )
+        // Kamus (Task 6)
+        .route(
+            "/api/kamus",
+            get(handlers::kamus::search_kamus).post(handlers::kamus::create_kamus),
+        )
+        .route(
+            "/api/kamus/:id",
+            get(handlers::kamus::get_kamus_detail).put(handlers::kamus::update_kamus_terjemahan),
+        )
+        // Kosakata konteks per halaman/bab (Task 6)
+        .route(
+            "/api/materi/:materi_id/halaman/:halaman/kosakata",
+            get(handlers::kosakata::list_kosakata_halaman),
+        )
+        .route(
+            "/api/materi/:materi_id/bab/:bab_id/kosakata",
+            get(handlers::kosakata::list_kosakata_bab),
+        )
+        .route(
+            "/api/kosakata",
+            post(handlers::kosakata::create_kosakata),
+        )
+        .route(
+            "/api/kosakata/:id",
+            put(handlers::kosakata::update_kosakata).delete(handlers::kosakata::delete_kosakata),
+        )
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);
@@ -156,7 +182,7 @@ async fn health_check(
         "status": "ok",
         "db_connected": db_ok,
         "app": "belajar-bahasa-backend",
-        "version": "0.3.0"
+        "version": "0.4.0"
     }))
 }
 

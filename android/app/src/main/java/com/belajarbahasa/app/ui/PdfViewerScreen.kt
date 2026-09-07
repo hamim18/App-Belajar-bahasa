@@ -70,6 +70,7 @@ import com.belajarbahasa.app.BackendPrefs
 import com.belajarbahasa.app.network.ApiClient
 import com.belajarbahasa.app.network.Bookmark
 import com.belajarbahasa.app.network.CreateBookmarkRequest
+import com.belajarbahasa.app.network.DaftarIsiNode
 import com.belajarbahasa.app.network.UpdateProgressRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -103,8 +104,10 @@ import kotlin.math.roundToInt
  *   800ms setelah pindah halaman - best effort, kegagalan simpan progress
  *   TIDAK dianggap fatal (tidak memblokir baca), sesuai filosofi
  *   "offline-first" di Konsep-program-learn.md.
- * - Tombol "Kosakata" di toolbar baru placeholder (Toast) - fungsional
- *   penuhnya baru dikerjakan di Task 6.
+ * - Tombol "Kosakata" di toolbar membuka ModalBottomSheet KosakataSheet
+ *   (Task 6) untuk halaman yang sedang dibaca. bab_id untuk kosakata di-resolve
+ *   otomatis dari daftarIsiTree (lihat findBabForHalaman) - boleh null kalau
+ *   halaman ini tidak masuk rentang bab manapun.
  * - Rendering PDF dijalankan di single-thread dispatcher terpisah
  *   (bukan Dispatchers.IO biasa) karena PdfRenderer/PdfRenderer.Page
  *   tidak aman diakses dari lebih dari satu thread bersamaan.
@@ -119,6 +122,8 @@ fun PdfViewerScreen(
     materiId: String,
     judulMateri: String,
     totalHalamanAwal: Int,
+    bahasaSumber: String,
+    bahasaTarget: String,
     /** null = lanjutkan otomatis dari progress terakhir (dipakai tombol "Baca"),
      *  angka eksplisit = langsung ke halaman itu (dipakai tombol ▶ per bab). */
     startHalaman: Int?,
@@ -153,6 +158,9 @@ fun PdfViewerScreen(
     var bookmarks by remember { mutableStateOf<List<Bookmark>>(emptyList()) }
     var showAddBookmarkDialog by remember { mutableStateOf(false) }
     var showBookmarkListDialog by remember { mutableStateOf(false) }
+    // Task 6 - dipakai untuk resolve bab_id per halaman saat membuka modal Kosakata.
+    var daftarIsiTree by remember { mutableStateOf<List<DaftarIsiNode>>(emptyList()) }
+    var showKosakataSheet by remember { mutableStateOf(false) }
 
     fun closeRendererResources() {
         try {
@@ -194,6 +202,14 @@ fun PdfViewerScreen(
             } catch (_: Exception) {
                 // biarkan kosong, tetap bisa dipakai untuk menambah bookmark baru
             }
+            // Muat daftar isi (Task 6) - dipakai untuk resolve bab_id per halaman
+            // saat membuka modal Kosakata. Best-effort: kalau gagal, kosakata tetap
+            // bisa ditambahkan tanpa bab_id (bab_id nullable di DB).
+            try {
+                daftarIsiTree = ApiClient.get(url).getDaftarIsi(materiId)
+            } catch (_: Exception) {
+                // biarkan kosong
+            }
             // Resolve halaman awal: kalau startHalaman dikirim eksplisit (tap ▶ di
             // satu bab), pakai itu. Kalau null (tombol "Baca"), ambil halaman
             // terakhir dari backend supaya baca lanjut dari posisi terakhir -
@@ -219,6 +235,13 @@ fun PdfViewerScreen(
             closeRendererResources()
             pdfDispatcher.close()
         }
+    }
+
+    // Task 6 - bab (kalau ada) yang mengandung halaman yang sedang dibaca.
+    // null artinya halaman ini tidak masuk rentang bab manapun di Daftar Isi -
+    // kosakata tetap bisa ditambahkan, hanya tanpa bab_id (nullable di DB).
+    val currentBab = remember(daftarIsiTree, currentPageDisplay) {
+        findBabForHalaman(daftarIsiTree, currentPageDisplay)
     }
 
     Scaffold(
@@ -301,13 +324,7 @@ fun PdfViewerScreen(
                             }
                         },
                         bookmarkedPages = bookmarks.map { it.halaman - 1 }.toSet(),
-                        onOpenKosakataPlaceholder = {
-                            Toast.makeText(
-                                context,
-                                "Fitur Kosakata akan hadir di Task 6",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        },
+                        onOpenKosakata = { showKosakataSheet = true },
                         pendingJumpPage = pendingJumpPage,
                         onJumpConsumed = { pendingJumpPage = null },
                     )
@@ -359,6 +376,33 @@ fun PdfViewerScreen(
             },
         )
     }
+
+    if (showKosakataSheet) {
+        KosakataSheet(
+            materiId = materiId,
+            bahasaSumber = bahasaSumber,
+            bahasaTarget = bahasaTarget,
+            halaman = currentPageDisplay,
+            babId = currentBab?.id,
+            judulBab = currentBab?.judul_sumber,
+            onDismiss = { showKosakataSheet = false },
+        )
+    }
+}
+
+/**
+ * Task 6 - cari node daftar isi (termasuk sub-bab) yang rentang halamannya
+ * mengandung halaman tertentu. Kalau ada beberapa node yang cocok (bab &
+ * sub-babnya sama-sama mengandung halaman ini), pilih yang rentangnya PALING
+ * SEMPIT (biasanya sub-bab, karena levelnya lebih dalam dari bab induknya).
+ */
+private fun findBabForHalaman(nodes: List<DaftarIsiNode>, halaman: Int): DaftarIsiNode? {
+    fun flattenAll(list: List<DaftarIsiNode>): List<DaftarIsiNode> =
+        list.flatMap { listOf(it) + flattenAll(it.sub_bab) }
+
+    return flattenAll(nodes)
+        .filter { halaman in it.halaman_awal..it.halaman_akhir }
+        .minByOrNull { it.halaman_akhir - it.halaman_awal }
 }
 
 /** Download file PDF ke cache lokal kalau belum ada, lalu kembalikan File-nya. */
@@ -389,7 +433,7 @@ private fun PdfPagerContent(
     onToggleToolbar: () -> Unit,
     onPageSettled: (Int) -> Unit,
     bookmarkedPages: Set<Int>,
-    onOpenKosakataPlaceholder: () -> Unit,
+    onOpenKosakata: () -> Unit,
     pendingJumpPage: Int?,
     onJumpConsumed: () -> Unit,
 ) {
@@ -416,7 +460,7 @@ private fun PdfPagerContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onOpenKosakataPlaceholder) {
+                OutlinedButton(onClick = onOpenKosakata) {
                     Text("📝 Kosakata")
                 }
                 Spacer(modifier = Modifier.weight(1f))

@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
@@ -77,7 +78,10 @@ import java.io.IOException
  * folder yang sedang dibuka (breadcrumb), kosong berarti sedang di root.
  */
 @Composable
-fun HomeScreen(onOpenMateri: (Materi) -> Unit = {}) {
+fun HomeScreen(
+    onOpenMateri: (Materi) -> Unit = {},
+    onOpenKamus: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -156,6 +160,9 @@ fun HomeScreen(onOpenMateri: (Materi) -> Unit = {}) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenKamus) {
+                        Icon(Icons.Default.Book, contentDescription = "Kamus")
+                    }
                     IconButton(onClick = { showIpDialog = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Pengaturan Backend")
                     }

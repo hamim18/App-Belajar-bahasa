@@ -110,4 +110,59 @@ interface ApiService {
 
     @DELETE("api/bookmarks/{id}")
     suspend fun deleteBookmark(@Path("id") id: String): DeletedResponse
+
+    // ===== Kamus & Kosakata - Task 6 =====
+    // Sinkron dengan backend/src/handlers/kamus.rs & backend/src/handlers/kosakata.rs
+
+    /** bahasaSumber/bahasaTarget null -> backend pakai bahasa default user. */
+    @GET("api/kamus")
+    suspend fun searchKamus(
+        @Query("q") q: String? = null,
+        @Query("bahasa_sumber") bahasaSumber: String? = null,
+        @Query("bahasa_target") bahasaTarget: String? = null,
+        @Query("tipe_kata") tipeKata: String? = null,
+        @Query("limit") limit: Int? = null,
+        @Query("offset") offset: Int? = null
+    ): KamusSearchResponse
+
+    @GET("api/kamus/{id}")
+    suspend fun getKamusDetail(
+        @Path("id") id: String,
+        @Query("bahasa_target") bahasaTarget: String? = null
+    ): KamusDetail
+
+    @POST("api/kamus")
+    suspend fun createKamus(@Body body: CreateKamusRequest): KamusDetail
+
+    @PUT("api/kamus/{id}")
+    suspend fun updateKamusTerjemahan(
+        @Path("id") id: String,
+        @Body body: UpdateKamusTerjemahanRequest
+    ): KamusDetail
+
+    /** babId null -> semua kosakata di halaman ini lintas bab. */
+    @GET("api/materi/{materiId}/halaman/{halaman}/kosakata")
+    suspend fun listKosakataHalaman(
+        @Path("materiId") materiId: String,
+        @Path("halaman") halaman: Int,
+        @Query("bab_id") babId: String? = null
+    ): List<KosakataItem>
+
+    @GET("api/materi/{materiId}/bab/{babId}/kosakata")
+    suspend fun listKosakataBab(
+        @Path("materiId") materiId: String,
+        @Path("babId") babId: String
+    ): List<KosakataBabItem>
+
+    @POST("api/kosakata")
+    suspend fun createKosakata(@Body body: CreateKosakataRequest): KosakataItem
+
+    @PUT("api/kosakata/{id}")
+    suspend fun updateKosakata(
+        @Path("id") id: String,
+        @Body body: UpdateKosakataRequest
+    ): KosakataItem
+
+    @DELETE("api/kosakata/{id}")
+    suspend fun deleteKosakata(@Path("id") id: String): DeletedResponse
 }
